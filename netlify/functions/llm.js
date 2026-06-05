@@ -1,121 +1,158 @@
-const SYSTEM_PROMPT = `You are SuroBot, a smart and friendly AI assistant on Surojit Mondal's personal portfolio website. Your job is to help visitors learn about Surojit — his skills, experience, projects, and achievements.
+// Gemini chatbot proxy. The system prompt is BUILT DYNAMICALLY from the user's
+// data.json in the private storage repo, so every deployed portfolio's bot
+// answers as its own owner — no hardcoded identity.
 
-ABOUT SUROJIT:
-Surojit Mondal is a Full-Stack Developer with 1+ year of professional experience, currently pursuing B.Tech in Information Technology (CGPA: 7.88) at Central University of Chhattisgarh (Dec 2022 – Jul 2026). He is currently a Research Intern at IIT Hyderabad under Dr. Satish Regonda (SURE Program, promoted to full-time semester-long internship).
+const SYSTEM_PROMPT_TTL_MS = 5 * 60 * 1000; // re-fetch data.json every 5 minutes
 
-CONTACT & PROFILES:
-- Email: surojitmondalit@gmail.com
-- Phone: +91 97489 97344
-- Portfolio: https://surojit.netlify.app/
-- GitHub: github.com/mondalsurojit
-- LinkedIn: linkedin.com/in/surojitmondal
-- LeetCode: leetcode.com/mondalsurojit
+let cached = null; // { prompt, fetchedAt }
 
-EXPERIENCE:
-1. Research Intern — IIT Hyderabad (May 2025 – Present, Full-time Onsite)
-   - Working under Dr. Satish Regonda (Associate Professor) through SURE program; promoted to full-time semester-long internship.
-   - WRF Automation & Visualization: Automating NCEP climate data into the WRF model (MLOps), working with GRIB and NetCDF meteorological file formats. Built full frontend & backend for hourly weather prediction covering 22,000+ sq km over Telangana at 1 sq km resolution for 5-day forecasts.
-   - SnapFlood (RAFT): Migrated backend from Firebase to Node/Express + MongoDB for AWS hosting.
-   - CGodavari (www.cgodavari.in): Developing and maintaining the Centre of Godavari River Management Studies site under NRCD, Ministry of Jal Shakti.
+async function fetchData() {
+  const { GITHUB_OWNER, GITHUB_REPO, GITHUB_TOKEN } = process.env;
+  if (!GITHUB_OWNER || !GITHUB_REPO || !GITHUB_TOKEN) {
+    throw new Error("Missing GITHUB_OWNER / GITHUB_REPO / GITHUB_TOKEN env vars");
+  }
 
-2. Full-Stack Intern — BharatTech, Kanpur (Apr 2024 – Oct 2024, Full-time Remote)
-   - RECAG (Best Innovative Startup, Empresario 2025, IIT Kharagpur): Built complete dashboard UI with TailwindCSS, MaterialUI, Chart.js; fixed responsiveness bugs; collaborated on CI/CD pipelines.
-   - BharatAI: Built full-stack platform from scratch using React, Node.js, Express, MongoDB following weekly Agile cycles.
-   - BharatTech Official Site: Converted UI to TailwindCSS + MaterialUI, improving load speed by 40% (Lighthouse) and traffic by 25% (Vercel Analytics).
+  const res = await fetch(
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/public/data/data.json`,
+    {
+      headers: {
+        Authorization: `token ${GITHUB_TOKEN}`,
+        Accept: "application/vnd.github.v3.raw",
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`Failed to fetch data.json (${res.status})`);
+  return res.json();
+}
 
-PROJECTS:
-1. SnapFlood — Flutter, Dart, Firebase, Node.js, Express.js, AWS EC2 (Live on App Store & Play Store)
-   - Lead developer at RAFT, IIT Hyderabad. Funded by DST-SPLICE & AI CoE for Sustainable Cities.
-   - Citizen-sourced platform for real-time urban flood image/video reporting with rainfall–runoff analysis.
-   - 100+ downloads on Google Play Store. Serves policymakers, researchers, and emergency agencies.
+// Trim the JSON to fields that describe the owner; drop bulky/irrelevant ones
+// (media URLs, resume metadata, template/SEO settings, etc.) so the prompt stays focused.
+function buildOwnerProfile(data) {
+  const user = data?.user || {};
+  const settings = data?.settings || {};
+  const socials = data?.socials || {};
 
-2. Bhujal — HTML, TailwindCSS, JavaScript, Django, Leaflet.js, Chart.js, Arduino, Python, Scikit-learn, Vercel
-   - Real-time ML-powered groundwater monitoring with ~93% accuracy. India's first Borewell Congestion Map — 650+ sites mapped across Bilaspur.
-   - Community water-sharing model, borewell site optimization, 1M+ litres conserved annually.
-   - Endorsed by Mr. Anil Swaroop, former Coal Secretary of India.
+  return {
+    profile: {
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      headline: user.headline || "",
+      subheading: user.subheading || "",
+      email: user.email || "",
+      aboutMe: settings.aboutMe || "",
+    },
+    socials: Object.fromEntries(Object.entries(socials).filter(([, v]) => v)),
+    skills: data?.skills || [],
+    workExperience: data?.workExperience || [],
+    education: data?.education || [],
+    publications: data?.publications || [],
+    projects: data?.projects || [],
+    blogs: (data?.blogs || []).map((b) => ({
+      title: b.title,
+      description: b.description,
+      category: b.category,
+      tags: b.tags,
+      dateUploaded: b.dateUploaded,
+    })),
+  };
+}
 
-3. Other Live Projects:
-   - GGV CPC Site: Official Central Placement Cell site of Guru Ghasidas Vishwavidyalaya.
-   - Equilibrio Tech-Fest 2025 Site: Led a team of 4; 500+ average DAU (Mar–Apr 2025).
+async function buildSystemPrompt() {
+  const now = Date.now();
+  if (cached && now - cached.fetchedAt < SYSTEM_PROMPT_TTL_MS) return cached.prompt;
 
-4. Practice Projects: Retouch (Photo Editing), Casio-fx-991ES Plus (Scientific Calculator), NetSpeed (Internet Speed Checker).
+  const data = await fetchData();
+  const owner = buildOwnerProfile(data);
 
-ACHIEVEMENTS:
-- Samsung Solve for Tomorrow 2024, IIT Delhi — Top 5 out of 16,000+ teams; only qualifier from Eastern India. Featured in Samsung Newsroom, CNN, CNBC News-18, JioHotstar, Dainik Bhaskar, Hari Bhoomi.
-- Accenture Innovation Challenge 2024 — 1st Runner-up, Engineering Track, out of 20,000+ applicants.
-- Vishwakarma Award for Engineering Innovation 2024, IIT Hyderabad — Top 6 teams, Water & Sanitation track, across India.
-- Google AI for Impact 2024 — Top 98 teams across Asia-Pacific out of ~30,000 teams.
-- GATE-CSE 2025 Qualified.
-- GirlScript Summer of Code (GSSoC'24) — Ranked 163 globally among 17,000+ participants and 2,400 contributors.
+  const settings = data?.settings || {};
+  const fullName =
+    `${owner.profile.firstName} ${owner.profile.lastName}`.trim() || "the owner";
+  const botName = settings.botName || "Bot";
+  const email = owner.profile.email;
 
-SKILLS:
-- Languages: Python, Java, C, C++, JavaScript, Dart
-- Frameworks/Technologies: ReactJS, Node.js, Express.js, Django, WordPress, Bootstrap, TailwindCSS, HTML/CSS, Flutter
-- Databases & Cloud: SQL, MongoDB, Netlify, Netlify Serverless, AWS EC2, AWS Lambda, Redis
-- Tools: VS Code, Jupyter Notebook, Git/GitHub, Docker, Postman, Figma, Canva
-- General: Initiative-Driven, Collaborative, Multilingual (English, Hindi, Bengali), Project Management
+  const prompt = `You are ${botName}, a smart and friendly AI assistant on ${fullName}'s personal portfolio website. Your job is to help visitors learn about ${fullName} — their skills, experience, projects, achievements, and background.
 
-CERTIFICATIONS:
-- GSSoC'24 & SSoC'24 Open Source Contributor
-- Ethical Hacking & Penetration Testing — C-DAC, Noida (MeitY)
-- Postman API Fundamentals Student Expert
-- Project Management Foundations — LinkedIn Learning
+PORTFOLIO DATA (this is your sole source of truth; treat it as everything you know about ${fullName}):
+\`\`\`json
+${JSON.stringify(owner, null, 2)}
+\`\`\`
 
-PUBLICATIONS:
-- Upcoming research paper as contributor under Prof. Dr. Satish Kumar Regonda and Lagnajeet Roy (PhD, 4th Yr) on WRF automation project at IIT Hyderabad. (Submitted, Coming Soon)
+BEHAVIOR:
+- Be friendly, concise, and professional. Respond like a smart assistant representing ${fullName}.
+- Only answer questions about ${fullName} — their skills, experience, projects, achievements, background, or blog posts above.
+- If asked something completely unrelated (general knowledge, coding help, opinions on third parties, etc.), politely decline and redirect the visitor to ask about ${fullName}.
+- Never fabricate information. If something isn't covered above, say you don't have that detail and suggest contacting ${fullName} directly${email ? ` at ${email}` : ""}.
+- Speak positively and confidently about ${fullName}'s work and accomplishments.
+- Keep replies under 4 short paragraphs unless the visitor explicitly asks for more detail.`;
 
-YOUR BEHAVIOR:
-- Be friendly, concise, and professional. Respond like a smart assistant representing Surojit.
-- Only answer questions about Surojit — his skills, experience, projects, achievements, or background.
-- If asked something completely unrelated (general knowledge, coding help, etc.), politely decline and redirect the visitor to ask about Surojit.
-- Never fabricate information. If something isn't covered above, say you don't have that detail and suggest contacting Surojit directly at surojitmondalit@gmail.com.
-- Speak positively and confidently about Surojit's work and accomplishments.`;
+  cached = { prompt, fetchedAt: now };
+  return prompt;
+}
 
 export const handler = async (event) => {
-    if (event.httpMethod !== "POST") {
-        return { statusCode: 405, body: JSON.stringify({ error: "Method not allowed" }) };
-    }
+  // GET = lightweight status probe. The template hits this on boot to know
+  // whether the chatbot UI should render. No body, no LLM call, no cost.
+  if (event.httpMethod === "GET") {
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ configured: !!process.env.GEMINI_API_KEY }),
+    };
+  }
 
-    let message, history = [];
-    try {
-        ({ message, history =[] } = JSON.parse(event.body));
-    } catch {
-        return { statusCode: 400, body: JSON.stringify({ error: "Invalid JSON" }) };
-    }
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, body: JSON.stringify({ error: "Method not allowed" }) };
+  }
 
-    if (!message) return { statusCode: 400, body: JSON.stringify({ error: "Message is required" }) };
+  let message;
+  let history = [];
+  try {
+    ({ message, history = [] } = JSON.parse(event.body));
+  } catch {
+    return { statusCode: 400, body: JSON.stringify({ error: "Invalid JSON" }) };
+  }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return { statusCode: 500, body: JSON.stringify({ error: "API key not configured" }) };
+  if (!message) return { statusCode: 400, body: JSON.stringify({ error: "Message is required" }) };
 
-    try {
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-                    contents: [
-                        ...history.map((m) => ({
-                            role: m.role,
-                            parts: [{ text: m.text }],
-                        })),
-                        { role: "user", parts: [{ text: message }] },
-                    ],
-                }),
-            }
-        );
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return { statusCode: 500, body: JSON.stringify({ error: "API key not configured" }) };
 
-        const data = await response.json();
-        if (data.error) return { statusCode: 500, body: JSON.stringify({ error: data.error.message }) };
+  let systemPrompt;
+  try {
+    systemPrompt = await buildSystemPrompt();
+  } catch (err) {
+    console.error("[llm] Failed to build system prompt:", err.message);
+    return { statusCode: 500, body: JSON.stringify({ error: "Portfolio data unavailable" }) };
+  }
 
-        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!reply) throw new Error("Empty response from Gemini");
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [
+            ...history.map((m) => ({
+              role: m.role,
+              parts: [{ text: m.text }],
+            })),
+            { role: "user", parts: [{ text: message }] },
+          ],
+        }),
+      }
+    );
 
-        return { statusCode: 200, body: JSON.stringify({ reply }) };
-    } catch (err) {
-        console.error(err);
-        return { statusCode: 500, body: JSON.stringify({ error: "Something went wrong." }) };
-    }
+    const data = await response.json();
+    if (data.error) return { statusCode: 500, body: JSON.stringify({ error: data.error.message }) };
+
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!reply) throw new Error("Empty response from Gemini");
+
+    return { statusCode: 200, body: JSON.stringify({ reply }) };
+  } catch (err) {
+    console.error("[llm] Gemini call failed:", err);
+    return { statusCode: 500, body: JSON.stringify({ error: "Something went wrong." }) };
+  }
 };

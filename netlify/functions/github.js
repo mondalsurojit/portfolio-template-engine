@@ -9,7 +9,21 @@ const MIME = {
   json: "application/json",
   pdf:  "application/pdf",
   md:   "text/markdown",
+  txt:  "text/plain",
+  html: "text/html",
+  svg:  "image/svg+xml",
+  webp: "image/webp",
+  png:  "image/png",
+  jpg:  "image/jpeg",
+  jpeg: "image/jpeg",
+  gif:  "image/gif",
+  avif: "image/avif",
+  ico:  "image/x-icon",
 };
+
+// Text formats can be returned via res.text(); everything else MUST be
+// base64-encoded or the raw bytes get corrupted by UTF-8 decoding.
+const TEXT_EXTS = new Set(["json", "md", "txt", "html", "svg"]);
 
 const extOf = (path) => path.split(".").pop().toLowerCase();
 
@@ -37,7 +51,7 @@ export const handler = async (event) => {
 
     const ext = extOf(filePath);
     const contentType = MIME[ext] || "application/octet-stream";
-    const isPdf = ext === "pdf";
+    const isBinary = !TEXT_EXTS.has(ext);
 
     // Cache check
     const now = Date.now();
@@ -73,7 +87,7 @@ export const handler = async (event) => {
     let body;
     let isBase64Encoded = false;
 
-    if (isPdf) {
+    if (isBinary) {
       const buffer = await res.arrayBuffer();
       body = Buffer.from(buffer).toString("base64");
       isBase64Encoded = true;
