@@ -48,9 +48,6 @@ This policy is current as of **September 2024**. If any changes are made, I will
 
 ## Got Questions?
 
-If you have questions, concerns, or just want to say hi, reach out via:  
-
-- [surojitmondalit@gmail.com](mailto:surojitmondalit@gmail.com)  
-- [Contact Form](/contact)
+If you have questions, concerns, or just want to say hi, reach out via the [Contact Form](/contact).
 
 I’d love to hear from you!
