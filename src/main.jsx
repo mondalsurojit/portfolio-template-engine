@@ -164,7 +164,16 @@ function AppProviders() {
         console.warn("[engine] data.json not loaded — rendering template with empty data:", err.message);
       }
       setData(json);
-      setDarkMode(json?.settings?.theme === "dark");
+      // Theme can be "auto" (default), "light", or "dark". For "auto" we
+      // mirror the visitor's OS prefers-color-scheme; the live-update listener
+      // is wired below so visitors who toggle their OS theme see the portfolio
+      // flip in real time.
+      const theme = json?.settings?.theme || "auto";
+      setDarkMode(
+        theme === "auto"
+          ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          : theme === "dark"
+      );
 
       // 1b. LOAD BLOGS — separate file (blogs.json) — also NON-FATAL. Sort once
       //     here (newest first) so every consumer sees the same order.
@@ -226,6 +235,16 @@ function AppProviders() {
     if (darkMode === null) return;
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
+
+  // When theme === "auto", keep the portfolio in sync with the visitor's OS
+  // theme toggle in real time. No-op for explicit light/dark.
+  useEffect(() => {
+    if ((data?.settings?.theme || "auto") !== "auto") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e) => setDarkMode(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [data?.settings?.theme]);
 
   if (bootError) {
     return (
