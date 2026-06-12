@@ -1,5 +1,13 @@
 // Generic secure proxy for any file in the private GitHub repo.
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+// Cache strategy is split by file type:
+//   - JSON / Markdown (data.json, blogs.json, content.md) are the source of
+//     truth the CMS publishes. They're small and change often, so we never
+//     cache them — every read goes to GitHub for instant propagation.
+//   - Everything else (images, PDFs) is large and rarely changes, so we cache
+//     for 5 minutes. Avoids re-fetching the same image for every visitor and
+//     protects the GITHUB_TOKEN rate limit (5000/hr) on bursty traffic.
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes (binaries only)
+const NO_CACHE_EXTS = new Set(["json", "md"]);
 
 // Simple in-memory cache: path → { body, contentType, fetchedAt }
 const cache = {};
@@ -52,10 +60,12 @@ export const handler = async (event) => {
     const ext = extOf(filePath);
     const contentType = MIME[ext] || "application/octet-stream";
     const isBinary = !TEXT_EXTS.has(ext);
+    const skipCache = NO_CACHE_EXTS.has(ext);
 
-    // Cache check
+    // Cache check — bypassed entirely for JSON / Markdown so CMS publishes
+    // reach the engine instantly.
     const now = Date.now();
-    const cached = cache[filePath];
+    const cached = skipCache ? null : cache[filePath];
     if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
       return {
         statusCode: 200,
@@ -95,8 +105,10 @@ export const handler = async (event) => {
       body = await res.text();
     }
 
-    // Store in cache
-    cache[filePath] = { body, contentType, isBase64Encoded, fetchedAt: now };
+    // Store in cache (skipped for JSON / Markdown).
+    if (!skipCache) {
+      cache[filePath] = { body, contentType, isBase64Encoded, fetchedAt: now };
+    }
 
     return {
       statusCode: 200,
